@@ -5,7 +5,7 @@
 ## 目錄結構
 
 - `wing_simulator.py`：計算機翼面積，根據重量、升力係數、空氣密度與速度。
-- `speed_simulator.py`：計算飛行所需速度，根據重量、升力係數、空氣密度與機翼面積。
+- `speed_simulator.py`：計算飛行所需速度，根據重量、升力係數、空氣密度、機翼面積與起飛安全倍率。
 - `catapult_simulator.py`：模擬彈射起飛過程，計算達到起飛速度所需時間、水平距離、對地下滑距離與最低高度。
 
 ## 使用方式
@@ -24,13 +24,25 @@ python wing_simulator.py
 ### 2. 計算飛行速度
 執行：
 ```bash
-python speed_simulator.py
+python speed_simulator.py [options]
 ```
-依照提示輸入：
-- 重量 (N)
-- 升力係數 (CL)
-- 空氣密度 (kg/m^3)
-- 機翼面積 (m^2)
+可用選項帶入參數，或依照提示輸入：
+- `--weight`：重量 (N)
+- `--cl`：升力係數 (CL)
+- `--density`：空氣密度 (kg/m^3)
+- `--area`：機翼面積 (m^2)
+- `--takeoff_safe`：起飛安全倍率（預設 1.0）
+
+範例（帶入所有參數）：
+```bash
+python speed_simulator.py --weight 100 --cl 1.2 --density 1.225 --area 2.5 --takeoff_safe 1.1
+```
+或直接執行，依提示輸入數值。
+
+查看說明：
+```bash
+python speed_simulator.py --help
+```
 
 ### 3. 彈射起飛模擬
 執行：
