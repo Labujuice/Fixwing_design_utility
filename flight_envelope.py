@@ -121,6 +121,49 @@ plt.plot(V_max_kmh, altitudes / 1000, color='red', linestyle='--', label='max ve
 plt.fill_betweenx(altitudes / 1000, V_stall_kmh, V_max_kmh, color='green', alpha=0.3, 
                  label='Flight Envelope')
 
+# --- Dive Speed 計算 ---
+def calc_dive_speed(h0, V0, dive_angle_deg):
+    """
+    h0: 初始高度 (m)
+    V0: 初始速度 (m/s)
+    dive_angle_deg: 俯衝角度 (負值, ex: -30)
+    return: 到達地表時的最大速度 (m/s)
+    """
+    dt = 0.05  # 時間步長 (s)
+    h = h0
+    V = V0
+    theta = np.radians(dive_angle_deg)
+    while h > 0:
+        rho = rho_h(h)
+        CL = 0.0  # 俯衝時假設升力近似為零
+        CD = CD_0_total + k * CL**2
+        D = 0.5 * rho * V**2 * S * CD
+        T = thrust_model(T_static_sea_level, h, V)
+        # 速度分量沿飛行方向
+        a = (T - D + W * np.sin(-theta)) / (M_aircraft)
+        V += a * dt
+        h -= V * np.sin(-theta) * dt
+        if V < 0: V = 0.1
+    return V
+
+# 計算三條 dive speed 曲線
+V_dive_30 = []
+V_dive_45 = []
+V_dive_60 = []
+for i, h in enumerate(altitudes):
+    V0 = V_stall_list[i]
+    V_dive_30.append(calc_dive_speed(h, V0, -30))
+    V_dive_45.append(calc_dive_speed(h, V0, -45))
+    V_dive_60.append(calc_dive_speed(h, V0, -60))
+V_dive_30_kmh = np.array(V_dive_30) * 3.6
+V_dive_45_kmh = np.array(V_dive_45) * 3.6
+V_dive_60_kmh = np.array(V_dive_60) * 3.6
+
+# 在繪圖區塊加上 dive speed 曲線
+plt.plot(V_dive_30_kmh, altitudes / 1000, color='orange', linestyle='-', label='Dive speed -30°')
+plt.plot(V_dive_45_kmh, altitudes / 1000, color='purple', linestyle='-', label='Dive speed -45°')
+plt.plot(V_dive_60_kmh, altitudes / 1000, color='brown', linestyle='-', label='Dive speed -60°')
+
 plt.title('Flight Envelope (V-h Diagram)')
 plt.xlabel('velocity (km/h)')
 plt.ylabel('altitude (km)')
