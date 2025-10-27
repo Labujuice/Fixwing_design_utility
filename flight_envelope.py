@@ -217,7 +217,7 @@ for idx, h in enumerate(alt_levels):
     V_stall_h = np.sqrt((2 * W) / (rho_h(h) * S * CL_max))
     # 從V_max_list中找到對應高度的最大速度作為掃描上限
     V_max_h = np.interp(h, altitudes, V_max_list)
-    V_scan = np.linspace(V_stall_h, V_max_h * 1.1, 100) # 掃描100個速度點
+    V_scan = np.linspace(V_stall_h, V_max_h, 100) # 掃描至該高度的最大速度截止點
 
     # 2. 計算每個速度點所需的推力
     T_required = [calculate_required_thrust(h, V) for V in V_scan]
