@@ -37,13 +37,30 @@ altitudes = np.linspace(0, H_max, 50) # 50 個計算高度點
 rho_sl = 1.225      # kg/m^3 (海平面大氣密度)
 T_sl = 288.15       # K (海平面溫度)
 a_T = -0.0065       # K/m (溫度隨高度的梯度)
+gamma = 1.4         # 熱容比 (for air)
+R = 287.05          # 氣體常數 (J/kg·K)
 
-# 假設推力隨高度和速度的簡化模型 (實際更複雜)
+def speed_of_sound(h):
+    """計算給定高度的音速"""
+    if h <= 11000:
+        T_h = T_sl + a_T * h
+        return np.sqrt(gamma * R * T_h)
+    else:
+        # 假設在平流層溫度恆定
+        T_11km = T_sl + a_T * 11000
+        return np.sqrt(gamma * R * T_11km)
+
 def thrust_model(T_static_sl, altitude, velocity):
-    # 簡化的大氣推力修正：推力與密度比的平方根成正比，
-    # 速度修正在此簡化模型中暫不納入
+    """
+    優化後的推力模型，同時考慮高度(密度)與速度(馬赫數)的影響。
+    T = T_sl * (rho/rho_sl)^n * (1 + c1*M + c2*M^2)
+    """
     density_ratio = rho_h(altitude) / rho_sl
-    T_available = T_static_sl * np.power(density_ratio, 0.7)
+    mach_number = velocity / speed_of_sound(altitude)
+    # 經驗係數，此處設定為模擬典型高旁通比渦扇引擎，推力隨速度略微下降
+    c1, c2 = -0.2, 0.1
+    mach_correction = 1 + c1 * mach_number + c2 * mach_number**2
+    T_available = T_static_sl * np.power(density_ratio, 0.7) * mach_correction
     return T_available
 
 def rho_h(h):
@@ -170,7 +187,59 @@ plt.ylabel('altitude (km)')
 plt.grid(True)
 plt.legend()
 plt.ylim(0, H_max / 1000 * 1.1)
-plt.show()
+plt.show(block=False)
+
+# --- 速度-推力曲線 (不同高度下的巡航速度 vs 推力) ---
+# 選取 H_max 五等分的高度（包含地表與頂端）
+n_levels = 5
+alt_levels = np.linspace(0, H_max, n_levels)
+
+# 優化：反向計算。掃描速度，計算所需推力(阻力)，而非掃描推力找速度。
+def calculate_required_thrust(h, V):
+    """在給定高度h和速度V下，計算平飛所需的推力(等於阻力)。"""
+    if V <= 0:
+        return np.nan
+    rho = rho_h(h)
+    CL = W / (0.5 * rho * V**2 * S)
+    # 如果計算出的CL超過CL_max，代表此速度低於失速速度，物理上不可行
+    if CL > CL_max:
+        return np.nan
+    CD = CD_0_total + k * CL**2
+    Drag = 0.5 * rho * V**2 * S * CD
+    return Drag
+
+# 繪圖
+plt.figure(figsize=(10, 6))
+colors = plt.cm.viridis(np.linspace(0, 1, len(alt_levels)))
+
+for idx, h in enumerate(alt_levels):
+    # 1. 確定該高度的速度掃描範圍
+    V_stall_h = np.sqrt((2 * W) / (rho_h(h) * S * CL_max))
+    # 從V_max_list中找到對應高度的最大速度作為掃描上限
+    V_max_h = np.interp(h, altitudes, V_max_list)
+    V_scan = np.linspace(V_stall_h, V_max_h, 100) # 掃描至該高度的最大速度截止點
+
+    # 2. 計算每個速度點所需的推力
+    T_required = [calculate_required_thrust(h, V) for V in V_scan]
+
+    # 3. 繪製所需推力曲線
+    plt.plot(T_required, V_scan, color=colors[idx], label=f'h = {int(h)} m (Required)')
+
+    # 4. 標示出該高度的最大可用推力
+    #    此處的 V_max_h 是推力與阻力曲線的交點，對應的推力即為最大可用推力
+    T_max_at_h = calculate_required_thrust(h, V_max_h)
+    if T_max_at_h is not None and not np.isnan(T_max_at_h):
+        plt.axvline(x=T_max_at_h, color=colors[idx], linestyle='--', linewidth=1.5, 
+                    label=f'Max Thrust @ {int(h)} m')
+
+plt.xlabel('Required Thrust (N)')
+plt.ylabel('Cruise speed (m/s)')
+plt.title('Cruise Speed vs. Required Thrust at Selected Altitudes')
+plt.grid(True)
+# 將圖例放到圖外右側
+plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.tight_layout()
+plt.show(block=True)
 
 # 由於您的問題涉及工程計算的複雜性，
 # 在實際應用中，會需要一個更精確的標準大氣模型和推力模型。
