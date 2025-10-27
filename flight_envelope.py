@@ -170,7 +170,69 @@ plt.ylabel('altitude (km)')
 plt.grid(True)
 plt.legend()
 plt.ylim(0, H_max / 1000 * 1.1)
-plt.show()
+plt.show(block=False)
+
+# --- 速度-推力曲線 (不同高度下的巡航速度 vs 推力) ---
+# 選取 H_max 五等分的高度（包含地表與頂端）
+n_levels = 5
+levels = np.linspace(0, H_max, n_levels)
+# 推力掃描範圍 (N)
+T_min = 0.1 * T_static_sea_level
+T_max = 1.2 * T_static_sea_level
+T_values = np.linspace(T_min, T_max, 60)
+
+# 找到給定高度與推力下的平飛速度 (T = Drag)
+def find_cruise_speed_for_thrust(h, T_avail):
+    rho = rho_h(h)
+    # 速度下限為該高度的失速速度
+    V_min = np.sqrt((2 * W) / (rho * S * CL_max))
+    V_max_search = 1000.0
+    V_step = 0.5
+    V_prev = V_min
+    # 計算阻力函數
+    def drag_at_V(V):
+        CL = W / (0.5 * rho * V**2 * S)
+        CD = CD_0_total + k * CL**2
+        return 0.5 * rho * V**2 * S * CD
+    D_prev = drag_at_V(V_prev)
+    # 若在 V_min 時阻力已大於可用推力，代表無平飛解 (回傳 NaN)
+    if D_prev > T_avail:
+        return np.nan
+    V_curr = V_prev + V_step
+    while V_curr <= V_max_search:
+        D_curr = drag_at_V(V_curr)
+        if D_curr >= T_avail:
+            # 線性內插取得較好近似
+            V_sol = V_prev + (T_avail - D_prev) / (D_curr - D_prev) * (V_curr - V_prev)
+            return V_sol
+        V_prev, D_prev = V_curr, D_curr
+        V_curr += V_step
+    return np.nan
+
+# 計算每個高度對應的速度-推力曲線
+speed_vs_T = {h: [] for h in levels}
+for h in levels:
+    for T_av in T_values:
+        V_cruise = find_cruise_speed_for_thrust(h, T_av)
+        speed_vs_T[h].append(V_cruise)
+
+# 繪圖
+plt.figure(figsize=(10, 6))
+colors = plt.cm.viridis(np.linspace(0, 1, len(levels)))
+for idx, h in enumerate(levels):
+    V_list = np.array(speed_vs_T[h])
+    # 把 NaN 過濾掉以利繪製
+    mask = ~np.isnan(V_list)
+    plt.plot(T_values[mask], V_list[mask], color=colors[idx], label=f'h = {int(h)} m')
+
+plt.xlabel('Available thrust (N)')
+plt.ylabel('Cruise speed (m/s)')
+plt.title('Cruise speed vs Available thrust at selected altitudes')
+plt.grid(True)
+# 將圖例放到圖外右側
+plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+plt.tight_layout()
+plt.show(block=True)
 
 # 由於您的問題涉及工程計算的複雜性，
 # 在實際應用中，會需要一個更精確的標準大氣模型和推力模型。
