@@ -239,7 +239,200 @@ plt.grid(True)
 # 將圖例放到圖外右側
 plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 plt.tight_layout()
-plt.show(block=True)
+plt.show(block=False)
 
-# 由於您的問題涉及工程計算的複雜性，
-# 在實際應用中，會需要一個更精確的標準大氣模型和推力模型。
+
+# --- 新增繪圖功能 ---
+
+def simulate_dive_with_history(h0, V0, dive_angle_deg):
+    """
+    Simulates a dive and records the history of kinematic variables.
+    h0: Initial altitude (m)
+    V0: Initial velocity (m/s)
+    dive_angle_deg: Dive angle (negative value, e.g., -30)
+    Returns: Dictionary containing history of velocity, altitude, and acceleration.
+    """
+    dt = 0.05  # Time step (s)
+    h = h0
+    V = V0
+    # In this context, gamma is the constant dive flight path angle
+    gamma = np.radians(dive_angle_deg)
+
+    V_hist, h_hist, a_hist = [], [], []
+    
+    # Set max iterations to prevent infinite loops
+    max_steps = 4000 
+    for _ in range(max_steps):
+        if h <= 0:
+            break
+            
+        rho = rho_h(h)
+        # Assuming CL=0 during a dive for simplicity, as in the original function
+        CL = 0.0
+        CD = CD_0_total # Since k*CL^2 is zero
+        D = 0.5 * rho * V**2 * S * CD
+        T = thrust_model(T_static_sea_level, h, V)
+        
+        # Acceleration along the flight path
+        # a = (Thrust - Drag + Gravity component) / Mass
+        a = (T - D + W * np.sin(-gamma)) / M_aircraft
+        
+        V_hist.append(V)
+        h_hist.append(h)
+        a_hist.append(a)
+        
+        # Update state for next step
+        V += a * dt
+        h += V * np.sin(gamma) * dt # gamma is negative, so h decreases
+
+    return {'V': np.array(V_hist), 'h': np.array(h_hist), 'a': np.array(a_hist)}
+
+# --- 1. Acceleration vs. Speed during Dive ---
+plt.figure(figsize=(10, 6))
+
+# Simulate dive starting from max altitude
+h_start = H_max
+# Start from stall speed at that altitude
+V_start = np.interp(h_start, altitudes, V_stall_list) 
+
+dive_angles = [-30, -45, -60]
+colors = plt.cm.plasma(np.linspace(0, 1, len(dive_angles)))
+
+for i, angle in enumerate(dive_angles):
+    dive_data = simulate_dive_with_history(h_start, V_start, angle)
+    # Plot acceleration vs. velocity (convert velocity to km/h)
+    plt.plot(dive_data['V'] * 3.6, dive_data['a'], color=colors[i], label=f'Dive Angle {angle}°')
+
+plt.title('Acceleration vs. Speed during Dive')
+plt.xlabel('Velocity (km/h)')
+plt.ylabel('Acceleration along Flight Path (m/s^2)')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show(block=False)
+
+
+# --- 2. 俯衝改出時，速度與加速度（G力）的關係圖 ---
+plt.figure(figsize=(10, 6))
+
+# 我們選用 -45 度的俯衝過程作為一個代表性的案例來分析改出機動
+dive_angle_for_pullout = -45
+dive_data = simulate_dive_with_history(h_start, V_start, dive_angle_for_pullout)
+V_dive = dive_data['V']
+h_dive = dive_data['h']
+# rho_h 函式不支援陣列運算，需逐點計算
+rho_dive = np.array([rho_h(h_val) for h_val in h_dive])
+
+# --- 情境 A: 對稱拉升改出 (Symmetric Pull-up) ---
+# 使用者問題 "以30度pitch離開" 解讀為：盡最大努力進行對稱拉升改出。
+# 此時的負載因子 (Load Factor 'n', 即G力) 由最大升力係數 CL_max 決定。
+# n = 升力 / 重力 = L / W
+L_max = 0.5 * rho_dive * V_dive**2 * S * CL_max
+n_pullup = L_max / W
+plt.plot(V_dive * 3.6, n_pullup, label='Symmetric Pull-up (use $CL_{max}$)', color='cyan')
+
+# --- 情境 B: 帶坡度轉彎改出 (Banked Turn) ---
+# 使用者問題 "以0度pitch, 30度roll離開" 解讀為：進行一個穩定的、坡度為30度的水平轉彎。
+# 在此情況下，所需的負載因子是固定的: n = 1 / cos(坡度)
+bank_angle = np.radians(30)
+n_turn = 1 / np.cos(bank_angle)
+# 這是一個常數，所以我們畫一條水平線
+plt.axhline(y=n_turn, color='magenta', linestyle='--', label=f'30° banked turn (n={n_turn:.2f} G)')
+
+# 同時，我們需要檢查這個機動是否可行。飛機必須能產生足夠的升力。
+# n_pullup 代表在該速度下飛機所能產生的最大G力。
+# 因此，只有在 n_pullup >= n_turn 的速度區間，轉彎才是可能的。
+# 我們可以找出 n_pullup 曲線與 n_turn 水平線的交點，這個點對應的速度常被稱為「角速度」(Corner Speed)。
+possible_indices = np.where(n_pullup >= n_turn)[0]
+if len(possible_indices) > 0:
+    first_possible_idx = possible_indices[0]
+    V_corner = V_dive[first_possible_idx]
+    plt.axvline(x=V_corner * 3.6, color='magenta', linestyle=':', 
+                label=f'Min. Speed for 30° Turn ({V_corner*3.6:.0f} km/h)')
+
+plt.title(f' {abs(dive_angle_for_pullout)}° Potential G-force during Pull-up from Dive')
+plt.xlabel('velocity (km/h)')
+plt.ylabel('loading factor (n) [G]')
+plt.ylim(bottom=0)
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show(block=False)
+
+
+# --- 3. Rate of Climb (ROC) vs. Velocity ---
+plt.figure(figsize=(10, 6))
+
+# Calculate at a representative altitude, e.g., sea level
+h_roc_calc = 0.0
+rho_roc = rho_h(h_roc_calc)
+
+# Define a velocity range for the plot
+V_stall_roc = np.sqrt((2 * W) / (rho_roc * S * CL_max))
+V_max_roc = np.interp(h_roc_calc, altitudes, V_max_list)
+V_range = np.linspace(V_stall_roc, V_max_roc, 200)
+
+# Calculate Power Available and Power Required
+P_avail = thrust_model(T_static_sea_level, h_roc_calc, V_range) * V_range
+# Use a list comprehension as the function is not vectorized
+D_req = np.array([calculate_required_thrust(h_roc_calc, v) for v in V_range])
+P_req = D_req * V_range
+
+# Calculate Rate of Climb
+ROC = (P_avail - P_req) / W
+
+# Find and annotate the maximum ROC
+max_roc_idx = np.nanargmax(ROC)
+V_best_roc = V_range[max_roc_idx]
+max_roc_val = ROC[max_roc_idx]
+
+plt.plot(V_range * 3.6, ROC, label=f'ROC @ {h_roc_calc:.0f} m')
+plt.axvline(x=V_best_roc * 3.6, color='green', linestyle='--', 
+            label=f'Best ROC Speed (Vy): {V_best_roc*3.6:.1f} km/h')
+plt.axhline(y=max_roc_val, color='red', linestyle='--', 
+            label=f'Max ROC: {max_roc_val:.2f} m/s')
+
+plt.title('Rate of Climb vs. Velocity')
+plt.xlabel('Velocity (km/h)')
+plt.ylabel('Rate of Climb (m/s)')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show(block=False)
+
+
+# --- 4. Lift-to-Drag (L/D) Ratio vs. Velocity ---
+plt.figure(figsize=(10, 6))
+
+# Use the same sea level conditions
+h_ld_calc = 0.0
+rho_ld = rho_h(h_ld_calc)
+
+# Use the same velocity range
+V_stall_ld = np.sqrt((2 * W) / (rho_ld * S * CL_max))
+V_max_ld = np.interp(h_ld_calc, altitudes, V_max_list)
+V_range_ld = np.linspace(V_stall_ld, V_max_ld, 200)
+
+# Calculate CL and CD for level flight across the velocity range
+CL_ld = W / (0.5 * rho_ld * V_range_ld**2 * S)
+CD_ld = CD_0_total + k * CL_ld**2
+LD_ratio = CL_ld / CD_ld
+
+# Find and annotate the maximum L/D
+max_ld_idx = np.nanargmax(LD_ratio)
+V_best_ld = V_range_ld[max_ld_idx]
+max_ld_val = LD_ratio[max_ld_idx]
+
+plt.plot(V_range_ld * 3.6, LD_ratio, label=f'L/D Ratio @ {h_ld_calc:.0f} m')
+plt.axvline(x=V_best_ld * 3.6, color='green', linestyle='--', 
+            label=f'Best L/D Speed: {V_best_ld*3.6:.1f} km/h')
+plt.axhline(y=max_ld_val, color='red', linestyle='--', 
+            label=f'Max L/D: {max_ld_val:.2f}')
+
+plt.title('Lift-to-Drag Ratio vs. Velocity')
+plt.xlabel('Velocity (km/h)')
+plt.ylabel('L/D Ratio')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show(block=True) # Make the last plot blocking
