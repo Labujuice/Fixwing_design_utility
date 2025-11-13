@@ -352,13 +352,87 @@ if len(possible_indices) > 0:
 
 plt.title(f' {abs(dive_angle_for_pullout)}° Potential G-force during Pull-up from Dive')
 plt.xlabel('velocity (km/h)')
-plt.ylabel('loading factor (n) [G力]')
+plt.ylabel('loading factor (n) [G]')
 plt.ylim(bottom=0)
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
-plt.show(block=True)
+plt.show(block=False)
 
 
-# 由於您的問題涉及工程計算的複雜性，
-# 在實際應用中，會需要一個更精確的標準大氣模型和推力模型。
+# --- 3. Rate of Climb (ROC) vs. Velocity ---
+plt.figure(figsize=(10, 6))
+
+# Calculate at a representative altitude, e.g., sea level
+h_roc_calc = 0.0
+rho_roc = rho_h(h_roc_calc)
+
+# Define a velocity range for the plot
+V_stall_roc = np.sqrt((2 * W) / (rho_roc * S * CL_max))
+V_max_roc = np.interp(h_roc_calc, altitudes, V_max_list)
+V_range = np.linspace(V_stall_roc, V_max_roc, 200)
+
+# Calculate Power Available and Power Required
+P_avail = thrust_model(T_static_sea_level, h_roc_calc, V_range) * V_range
+# Use a list comprehension as the function is not vectorized
+D_req = np.array([calculate_required_thrust(h_roc_calc, v) for v in V_range])
+P_req = D_req * V_range
+
+# Calculate Rate of Climb
+ROC = (P_avail - P_req) / W
+
+# Find and annotate the maximum ROC
+max_roc_idx = np.nanargmax(ROC)
+V_best_roc = V_range[max_roc_idx]
+max_roc_val = ROC[max_roc_idx]
+
+plt.plot(V_range * 3.6, ROC, label=f'ROC @ {h_roc_calc:.0f} m')
+plt.axvline(x=V_best_roc * 3.6, color='green', linestyle='--', 
+            label=f'Best ROC Speed (Vy): {V_best_roc*3.6:.1f} km/h')
+plt.axhline(y=max_roc_val, color='red', linestyle='--', 
+            label=f'Max ROC: {max_roc_val:.2f} m/s')
+
+plt.title('Rate of Climb vs. Velocity')
+plt.xlabel('Velocity (km/h)')
+plt.ylabel('Rate of Climb (m/s)')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show(block=False)
+
+
+# --- 4. Lift-to-Drag (L/D) Ratio vs. Velocity ---
+plt.figure(figsize=(10, 6))
+
+# Use the same sea level conditions
+h_ld_calc = 0.0
+rho_ld = rho_h(h_ld_calc)
+
+# Use the same velocity range
+V_stall_ld = np.sqrt((2 * W) / (rho_ld * S * CL_max))
+V_max_ld = np.interp(h_ld_calc, altitudes, V_max_list)
+V_range_ld = np.linspace(V_stall_ld, V_max_ld, 200)
+
+# Calculate CL and CD for level flight across the velocity range
+CL_ld = W / (0.5 * rho_ld * V_range_ld**2 * S)
+CD_ld = CD_0_total + k * CL_ld**2
+LD_ratio = CL_ld / CD_ld
+
+# Find and annotate the maximum L/D
+max_ld_idx = np.nanargmax(LD_ratio)
+V_best_ld = V_range_ld[max_ld_idx]
+max_ld_val = LD_ratio[max_ld_idx]
+
+plt.plot(V_range_ld * 3.6, LD_ratio, label=f'L/D Ratio @ {h_ld_calc:.0f} m')
+plt.axvline(x=V_best_ld * 3.6, color='green', linestyle='--', 
+            label=f'Best L/D Speed: {V_best_ld*3.6:.1f} km/h')
+plt.axhline(y=max_ld_val, color='red', linestyle='--', 
+            label=f'Max L/D: {max_ld_val:.2f}')
+
+plt.title('Lift-to-Drag Ratio vs. Velocity')
+plt.xlabel('Velocity (km/h)')
+plt.ylabel('L/D Ratio')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show(block=True) # Make the last plot blocking
